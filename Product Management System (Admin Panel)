@@ -1,0 +1,184 @@
+1.ROLE MIDDLEWARE (Admin / Seller)
+middleware/roleMiddleware.js
+module.exports = (...allowedRoles) => {
+  return (req, res, next) => {
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ msg: "Access denied" });
+    }
+
+    next();
+  };
+};
+
+2. PRODUCT CONTROLLER
+
+controllers/productController.js
+const db = require("../db");
+
+//  ADD PRODUCT
+exports.addProduct = (req, res) => {
+  const { name, description, price, stock } = req.body;
+
+  const sql = `
+    INSERT INTO products (name, description, price, stock, seller_id)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+
+  db.query(sql, [name, description, price, stock, req.user.id],
+    (err, result) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "Product added" });
+    });
+};
+
+//  UPDATE PRODUCT
+exports.updateProduct = (req, res) => {
+  const { name, price, stock } = req.body;
+
+  const sql = `
+    UPDATE products
+    SET name=?, price=?, stock=?
+    WHERE id=?
+  `;
+
+  db.query(sql, [name, price, stock, req.params.id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "Product updated" });
+    });
+};
+
+//  DELETE PRODUCT
+exports.deleteProduct = (req, res) => {
+  db.query(
+    "DELETE FROM products WHERE id=?",
+    [req.params.id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "Product deleted" });
+    }
+  );
+};
+
+//  GET ALL PRODUCTS
+exports.getProducts = (req, res) => {
+  db.query("SELECT * FROM products", (err, results) => {
+    res.json(results);
+  });
+};
+
+3. PRODUCT ROUTES
+
+routes/productRoutes.js
+const router = require("express").Router();
+
+const {
+  addProduct,
+  updateProduct,
+  deleteProduct,
+  getProducts
+} = require("../controllers/productController");
+
+const auth = require("../middleware/authMiddleware");
+const role = require("../middleware/roleMiddleware");
+
+// seller/admin only
+router.post("/", auth, role("seller","admin"), addProduct);
+router.put("/:id", auth, role("seller","admin"), updateProduct);
+router.delete("/:id", auth, role("admin"), deleteProduct);
+
+// public
+router.get("/", getProducts);
+
+module.exports = router;
+
+4. USER MANAGEMENT
+controllers/userController.js
+const db = require("../db");
+
+//  GET USERS
+exports.getUsers = (req, res) => {
+  db.query("SELECT id,name,email,role FROM users", (err, results) => {
+    res.json(results);
+  });
+};
+
+//  DELETE USER
+exports.deleteUser = (req, res) => {
+  db.query(
+    "DELETE FROM users WHERE id=?",
+    [req.params.id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "User deleted" });
+    }
+  );
+};
+
+//  CHANGE ROLE
+exports.updateRole = (req, res) => {
+  db.query(
+    "UPDATE users SET role=? WHERE id=?",
+    [req.body.role, req.params.id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "Role updated" });
+    }
+  );
+};
+routes/userRoutes.js
+const router = require("express").Router();
+const { getUsers, deleteUser, updateRole } = require("../controllers/userController");
+
+const auth = require("../middleware/authMiddleware");
+const role = require("../middleware/roleMiddleware");
+
+// admin only
+router.get("/", auth, role("admin"), getUsers);
+router.delete("/:id", auth, role("admin"), deleteUser);
+router.put("/:id", auth, role("admin"), updateRole);
+
+module.exports = router;
+
+5. ORDER MANAGEMENT
+controllers/orderController.js
+const db = require("../db");
+
+//  VIEW ALL ORDERS
+exports.getOrders = (req, res) => {
+  db.query("SELECT * FROM orders", (err, results) => {
+    res.json(results);
+  });
+};
+
+//  UPDATE STATUS
+exports.updateOrderStatus = (req, res) => {
+  db.query(
+    "UPDATE orders SET status=? WHERE id=?",
+    [req.body.status, req.params.id],
+    (err) => {
+      if (err) return res.status(500).json(err);
+      res.json({ msg: "Order updated" });
+    }
+  );
+};
+routes/orderRoutes.js
+const router = require("express").Router();
+
+const { getOrders, updateOrderStatus } = require("../controllers/orderController");
+
+const auth = require("../middleware/authMiddleware");
+const role = require("../middleware/roleMiddleware");
+
+// admin & seller
+router.get("/", auth, role("admin","seller"), getOrders);
+router.put("/:id", auth, role("admin","seller"), updateOrderStatus);
+
+module.exports = router;
+
+ 6. CONNECT TO SERVER
+Update  server.js
+app.use("/admin/products", require("./routes/productRoutes"));
+app.use("/admin/users", require("./routes/userRoutes"));
+app.use("/admin/orders", require("./routes/orderRoutes"));

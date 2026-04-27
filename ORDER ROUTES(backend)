@@ -1,0 +1,27 @@
+const router = require("express").Router();
+const Order = require("../models/Order");
+const Cart = require("../models/Cart");
+
+router.post("/checkout", async (req, res) => {
+  const cart = await Cart.findOne({ userId: req.body.userId });
+
+  let total = 0;
+  cart.items.forEach(i => total += i.quantity * 100); // sample
+
+  const order = await Order.create({
+    userId: req.body.userId,
+    items: cart.items,
+    total
+  });
+
+  await Cart.deleteOne({ userId: req.body.userId });
+
+  res.json(order);
+});
+
+router.get("/", async (req, res) => {
+  const orders = await Order.find();
+  res.json(orders);
+});
+
+module.exports = router;

@@ -1,0 +1,169 @@
+ORDER CONTROLLER
+controllers/orderController.js
+const db = require("../db");
+
+
+//  PLACE ORDER (Cart → Order)
+exports.placeOrder = (req, res) => {
+  const userId = req.user.id;
+
+  // 1. Get cart items
+  db.query(
+    "SELECT * FROM cart_items WHERE user_id=?",
+    [userId],
+    (err, cartItems) => {
+
+      if (cartItems.length === 0)
+        return res.status(400).json({ msg: "Cart is empty" });
+
+      let total = 0;
+
+      // 2. Get product prices
+      const productIds = cartItems.map(i => i.product_id);
+
+      db.query(
+        "SELECT * FROM products WHERE id IN (?)",
+        [productIds],
+        (err, products) => {
+
+          // 3. Calculate total
+          const orderItems = [];
+
+          cartItems.forEach(ci => {
+            const product = products.find(p => p.id === ci.product_id);
+
+            const price = product.price;
+            const itemTotal = price * ci.quantity;
+
+            total += itemTotal;
+
+            orderItems.push({
+              product_id: ci.product_id,
+              quantity: ci.quantity,
+              price
+            });
+          });
+
+          // 4. Create order
+          db.query(
+            "INSERT INTO orders (user_id, total, status) VALUES (?, ?, 'PENDING')",
+            [userId, total],
+            (err, result) => {
+
+              const orderId = result.insertId;
+
+              // 5. Insert order items
+              const values = orderItems.map(i => [
+                orderId,
+                i.product_id,
+                i.quantity,
+                i.price
+              ]);
+
+              db.query(
+                "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ?",
+                [values],
+                () => {
+
+                  // 6. Clear cart
+                  db.query(
+                    "DELETE FROM cart_items WHERE user_id=?",
+                    [userId]
+                  );
+
+                  res.json({
+                    msg: "Order placed",
+                    orderId,
+                    total
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+    }
+  );
+};
+
+
+
+//  GET USER ORDER HISTORY
+exports.getOrderHistory = (req, res) => {
+  const userId = req.user.id;
+
+  db.query(
+    "SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC",
+    [userId],
+    (err, orders) => {
+      res.json(orders);
+    }
+  );
+};
+
+
+
+//  TRACK SINGLE ORDER (WITH ITEMS)
+exports.trackOrder = (req, res) => {
+  const orderId = req.params.id;
+
+  const orderSql = "SELECT * FROM orders WHERE id=?";
+  const itemSql = `
+    SELECT oi.*, p.name 
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.order_id=?
+  `;
+
+  db.query(orderSql, [orderId], (err, orderRes) => {
+
+    if (orderRes.length === 0)
+      return res.status(404).json({ msg: "Order not found" });
+
+    db.query(itemSql, [orderId], (err, items) => {
+
+      res.json({
+        order: orderRes[0],
+        items
+      });
+    });
+  });
+};
+
+
+
+//  UPDATE ORDER STATUS (ADMIN / SELLER)
+exports.updateStatus = (req, res) => {
+  const { status } = req.body;
+
+  db.query(
+    "UPDATE orders SET status=? WHERE id=?",
+    [status, req.params.id],
+    () => res.json({ msg: "Status updated" })
+  );
+};
+2. ORDER ROUTES
+routes/orderRoutes.js
+const router = require("express").Router();
+
+const {
+  placeOrder,
+  getOrderHistory,
+  trackOrder,
+  updateStatus
+} = require("../controllers/orderController");
+
+const auth = require("../middleware/authMiddleware");
+const role = require("../middleware/roleMiddleware");
+
+// user actions
+router.post("/place", auth, placeOrder);
+router.get("/history", auth, getOrderHistory);
+router.get("/:id", auth, trackOrder);
+
+// admin/seller
+router.put("/:id", auth, role("admin","seller"), updateStatus);
+
+module.exports = router;
+3. CONNECT TO SERVER
+app.use("/orders", require("./routes/orderRoutes"));

@@ -1,0 +1,19 @@
+import api from "../services/api";
+
+export default function Checkout() {
+
+  const pay = async () => {
+    const res = await api.post("/payment/checkout");
+    window.location.href = res.data.url;
+  };
+
+  return (
+    <div className="p-4">
+      <h2>Checkout</h2>
+
+      <button onClick={pay}>
+        Pay with Card
+      </button>
+    </div>
+  );
+}

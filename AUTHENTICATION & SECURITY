@@ -1,0 +1,157 @@
+
+-----DATABASE CONNECTION----
+
+db.js
+const mysql = require("mysql2");
+
+const db = mysql.createConnection({
+  host: "localhost",
+  user: "root",
+  password: "yourpassword",
+  database: "swirl_cart"
+});
+
+db.connect(err => {
+  if (err) throw err;
+  console.log("MySQL Connected");
+});
+
+module.exports = db;
+
+----JWT UTILITY---
+
+utils/jwt.js
+const jwt = require("jsonwebtoken");
+
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user.id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+};
+
+module.exports = generateToken;
+
+----AUTH CONTROLLER----
+
+controllers/authController.js
+const db = require("../db");
+const bcrypt = require("bcryptjs");
+const generateToken = require("../utils/jwt");
+
+exports.signup = async (req, res) => {
+  const { name, email, password, role } = req.body;
+
+  const hash = await bcrypt.hash(password, 10);
+
+  const sql = "INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)";
+
+  db.query(sql, [name, email, hash, role || "buyer"], (err, result) => {
+    if (err) return res.status(500).json(err);
+
+    res.json({ msg: "User created" });
+  });
+};
+
+exports.login = (req, res) => {
+  const { email, password } = req.body;
+
+  db.query("SELECT * FROM users WHERE email=?", [email], async (err, results) => {
+    if (results.length === 0)
+      return res.status(400).json({ msg: "User not found" });
+
+    const user = results[0];
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch)
+      return res.status(400).json({ msg: "Invalid password" });
+
+    const token = generateToken(user);
+
+    res.json({ token, user });
+  });
+};
+
+
+----AUTH ROUTES----
+
+routes/authRoutes.js
+const router = require("express").Router();
+const { signup, login } = require("../controllers/authController");
+
+router.post("/signup", signup);
+router.post("/login", login);
+
+module.exports = router;
+
+-----AUTH MIDDLEWARE (JWT PROTECT)----
+
+middleware/authMiddleware.js
+const jwt = require("jsonwebtoken");
+
+module.exports = (req, res, next) => {
+
+  const header = req.headers.authorization;
+
+  if (!header)
+    return res.status(401).json({ msg: "No token provided" });
+
+  try {
+    const token = header.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    req.user = decoded;
+    next();
+
+  } catch {
+    res.status(401).json({ msg: "Invalid token" });
+  }
+};
+
+---ROLE-BASED ACCESS---
+
+middleware/roleMiddleware.js
+module.exports = (role) => {
+  return (req, res, next) => {
+
+    if (req.user.role !== role) {
+      return res.status(403).json({ msg: "Access denied" });
+    }
+
+    next();
+  };
+};
+
+--- SERVER---
+
+server.js
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+// routes
+app.use("/auth", require("./routes/authRoutes"));
+
+// protected example
+const auth = require("./middleware/authMiddleware");
+const role = require("./middleware/roleMiddleware");
+
+app.get("/admin", auth, role("admin"), (req, res) => {
+  res.json({ msg: "Welcome Admin" });
+});
+
+app.get("/user", auth, (req, res) => {
+  res.json({ msg: "Welcome User", user: req.user });
+});
+
+app.listen(5000, () => console.log("Server running on port 5000"));
+---env---
+
+JWT_SECRET=supersecretkey

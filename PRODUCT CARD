@@ -1,0 +1,15 @@
+import { Link } from "react-router-dom";
+
+export default function ProductCard({ p }) {
+  return (
+    <div className="border p-3">
+      <img src="https://via.placeholder.com/150" />
+      <h3>{p.name}</h3>
+      <p>${p.price}</p>
+
+      <Link to={`/product/${p.id}`}>
+        <button>View</button>
+      </Link>
+    </div>
+  );
+}

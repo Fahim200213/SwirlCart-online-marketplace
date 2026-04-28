@@ -1,0 +1,107 @@
+1.DATABASE DESIGN
+---Create reviews table---
+CREATE TABLE reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    product_id INT,
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY unique_review (user_id, product_id),
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+);
+----Update products table (if not already)---
+
+ALTER TABLE products 
+ADD rating DECIMAL(2,1) DEFAULT 0;
+
+2. REVIEW CONTROLLER
+controllers/reviewController.js
+const db = require("../db");
+
+
+//  ADD OR UPDATE REVIEW
+exports.addReview = (req, res) => {
+  const userId = req.user.id;
+  const { productId, rating, comment } = req.body;
+
+  const sql = `
+    INSERT INTO reviews (user_id, product_id, rating, comment)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE 
+    rating = VALUES(rating),
+    comment = VALUES(comment)
+  `;
+
+  db.query(sql, [userId, productId, rating, comment], (err) => {
+    if (err) return res.status(500).json(err);
+
+    //  Update product average rating
+    updateProductRating(productId);
+
+    res.json({ msg: "Review submitted" });
+  });
+};
+
+
+//  UPDATE PRODUCT AVG RATING
+const updateProductRating = (productId) => {
+
+  const avgSql = `
+    SELECT AVG(rating) as avgRating 
+    FROM reviews 
+    WHERE product_id=?
+  `;
+
+  db.query(avgSql, [productId], (err, result) => {
+
+    const avg = result[0].avgRating || 0;
+
+    db.query(
+      "UPDATE products SET rating=? WHERE id=?",
+      [avg, productId]
+    );
+  });
+};
+
+
+
+// GET REVIEWS FOR PRODUCT
+exports.getReviews = (req, res) => {
+  const productId = req.params.productId;
+
+  const sql = `
+    SELECT r.*, u.name 
+    FROM reviews r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.product_id=?
+    ORDER BY r.created_at DESC
+  `;
+
+  db.query(sql, [productId], (err, results) => {
+    res.json(results);
+  });
+};
+ 3. REVIEW ROUTES
+routes/reviewRoutes.js
+const router = require("express").Router();
+
+const {
+  addReview,
+  getReviews
+} = require("../controllers/reviewController");
+
+const auth = require("../middleware/authMiddleware");
+
+// add/update review (logged-in users)
+router.post("/", auth, addReview);
+
+// get all reviews for a product
+router.get("/:productId", getReviews);
+
+module.exports = router;
+4. CONNECT TO SERVER
+app.use("/reviews", require("./routes/reviewRoutes"));

@@ -1,0 +1,79 @@
+DATABASE UPDATE
+
+First, add category + rating to your products table:
+
+ALTER TABLE products 
+ADD category VARCHAR(100),
+ADD rating DECIMAL(2,1) DEFAULT 0;
+
+1.SEARCH CONTROLLER
+controllers/searchController.js
+const db = require("../db");
+
+exports.searchProducts = (req, res) => {
+
+  let {
+    keyword,
+    minPrice,
+    maxPrice,
+    category,
+    rating
+  } = req.query;
+
+  // base query
+  let sql = "SELECT * FROM products WHERE 1=1";
+  let params = [];
+
+  // SEARCH BY NAME
+  if (keyword) {
+    sql += " AND name LIKE ?";
+    params.push(`%${keyword}%`);
+  }
+
+  //  FILTER PRICE
+  if (minPrice) {
+    sql += " AND price >= ?";
+    params.push(minPrice);
+  }
+
+  if (maxPrice) {
+    sql += " AND price <= ?";
+    params.push(maxPrice);
+  }
+
+  //  CATEGORY FILTER
+  if (category) {
+    sql += " AND category = ?";
+    params.push(category);
+  }
+
+  //  RATING FILTER
+  if (rating) {
+    sql += " AND rating >= ?";
+    params.push(rating);
+  }
+
+  //  SORTING (optional)
+  sql += " ORDER BY rating DESC, price ASC";
+
+  db.query(sql, params, (err, results) => {
+    if (err) return res.status(500).json(err);
+
+    if (results.length === 0) {
+      return res.json({ msg: "No products found" });
+    }
+
+    res.json(results);
+  });
+};
+ 2. SEARCH ROUTES
+routes/searchRoutes.js
+const router = require("express").Router();
+const { searchProducts } = require("../controllers/searchController");
+
+// public route
+router.get("/", searchProducts);
+
+module.exports = router;
+3. CONNECT TO SERVER
+app.use("/search", require("./routes/searchRoutes"));

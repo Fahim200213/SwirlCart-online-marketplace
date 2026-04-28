@@ -1,0 +1,106 @@
+ 1. EMAIL SERVICE (NodeMailer)
+services/emailService.js
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+exports.sendEmail = async (to, subject, text) => {
+  await transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to,
+    subject,
+    text
+  });
+};
+2. SMS SERVICE (Twilio)
+services/smsService.js
+const twilio = require("twilio");
+
+const client = twilio(
+  process.env.TWILIO_SID,
+  process.env.TWILIO_AUTH
+);
+
+exports.sendSMS = async (to, message) => {
+  await client.messages.create({
+    body: message,
+    from: process.env.TWILIO_PHONE,
+    to
+  });
+};
+3. NOTIFICATION CONTROLLER
+controllers/notificationController.js
+const db = require("../db");
+const emailService = require("../services/emailService");
+const smsService = require("../services/smsService");
+
+
+//  SEND ORDER CONFIRMATION
+exports.sendOrderConfirmation = async (userId, orderId) => {
+
+  db.query("SELECT * FROM users WHERE id=?", [userId], async (err, userRes) => {
+
+    const user = userRes[0];
+
+    const message = `
+      Hello ${user.name},
+      Your order #${orderId} has been placed successfully!
+    `;
+
+    await emailService.sendEmail(user.email, "Order Confirmation", message);
+  });
+};
+
+
+
+//  SEND SMS UPDATE
+exports.sendSMSUpdate = async (userId, status) => {
+
+  db.query("SELECT * FROM users WHERE id=?", [userId], async (err, userRes) => {
+
+    const user = userRes[0];
+
+    const message = `Your order is now ${status}`;
+
+    await smsService.sendSMS(user.phone || "+880XXXXXXXXX", message);
+  });
+};
+
+
+
+//  TRIGGER ON ORDER STATUS CHANGE
+exports.notifyOrderStatus = (userId, status) => {
+  this.sendSMSUpdate(userId, status);
+};
+4. ROUTES (OPTIONAL TESTING)
+routes/notificationRoutes.js
+const router = require("express").Router();
+const notify = require("../controllers/notificationController");
+
+// test email
+router.get("/email", async (req, res) => {
+  await notify.sendOrderConfirmation(1, 101);
+  res.json({ msg: "Email sent" });
+});
+
+// test sms
+router.get("/sms", async (req, res) => {
+  await notify.sendSMSUpdate(1, "SHIPPED");
+  res.json({ msg: "SMS sent" });
+});
+
+module.exports = router;
+5. INTEGRATE WITH ORDER SYSTEM
+In your orderController.js
+After placing order:
+const notify = require("../notifications/controllers/notificationController");
+
+notify.sendOrderConfirmation(userId, orderId);
+After updating status:
+notify.notifyOrderStatus(userId, status);

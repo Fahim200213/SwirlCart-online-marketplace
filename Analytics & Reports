@@ -1,0 +1,105 @@
+1. ANALYTICS CONTROLLER
+controllers/analyticsController.js
+const db = require("../db");
+
+
+//  SALES REPORT (TOTAL REVENUE + ORDERS)
+exports.getSalesReport = (req, res) => {
+
+  const { startDate, endDate } = req.query;
+
+  const sql = `
+    SELECT 
+      COUNT(*) AS totalOrders,
+      SUM(total) AS totalRevenue
+    FROM orders
+    WHERE created_at BETWEEN ? AND ?
+    AND status IN ('PAID','SHIPPED','DELIVERED')
+  `;
+
+  db.query(sql, [startDate, endDate], (err, result) => {
+    res.json(result[0]);
+  });
+};
+
+
+
+//  DAILY SALES
+exports.getDailySales = (req, res) => {
+
+  const sql = `
+    SELECT 
+      DATE(created_at) as date,
+      SUM(total) as revenue
+    FROM orders
+    WHERE status IN ('PAID','SHIPPED','DELIVERED')
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `;
+
+  db.query(sql, (err, results) => {
+    res.json(results);
+  });
+};
+
+
+
+//  USER ACTIVITY
+exports.getUserStats = (req, res) => {
+
+  const sql = `
+    SELECT 
+      COUNT(*) AS totalUsers,
+      SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS newUsers
+    FROM users
+  `;
+
+  db.query(sql, (err, result) => {
+    res.json(result[0]);
+  });
+};
+
+
+
+//  POPULAR PRODUCTS
+exports.getPopularProducts = (req, res) => {
+
+  const sql = `
+    SELECT 
+      p.id,
+      p.name,
+      SUM(oi.quantity) as totalSold
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY p.id
+    ORDER BY totalSold DESC
+    LIMIT 10
+  `;
+
+  db.query(sql, (err, results) => {
+    res.json(results);
+  });
+};
+ 2. ROUTES
+routes/analyticsRoutes.js
+const router = require("express").Router();
+
+const {
+  getSalesReport,
+  getDailySales,
+  getUserStats,
+  getPopularProducts
+} = require("../controllers/analyticsController");
+
+const auth = require("../middleware/authMiddleware");
+const role = require("../middleware/roleMiddleware");
+
+// admin only
+router.get("/sales", auth, role("admin"), getSalesReport);
+router.get("/daily-sales", auth, role("admin"), getDailySales);
+router.get("/users", auth, role("admin"), getUserStats);
+router.get("/popular", auth, role("admin"), getPopularProducts);
+
+module.exports = router;
+ 3. CONNECT TO SERVER
+app.use("/analytics", require("./routes/analyticsRoutes"));
